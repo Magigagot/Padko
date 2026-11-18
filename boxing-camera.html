@@ -121,7 +121,7 @@ function camDetect(now){
   }
   if(now-G.t0<2200)return;
   for(const t of G.tg.slice()){
-    const p=cam.hp[t.hand];if(!p)continue;
+    const p=cam.hp[t.hand];if(!p||now<t.born)continue;
     if(Math.hypot(p.x-t.x,p.y-t.y)>=t.r*1.3){t.out=1;continue}
     if(!t.out)continue;
     const o=cam.tr[t.hand][0],dx=p.x-o.x,dy=p.y-o.y,m=Math.hypot(dx,dy);
@@ -166,7 +166,7 @@ $('stop').onclick=finish;
 
 function spawn(now,el){
   const k=kk(el),d=DIF[G.dif],f=G.cam?1.15:1;
-  const ttl=Math.max(900,(3000-1200*k)*d.ttl*f);
+  const ttl=Math.max(800,(1500-500*k)*d.ttl*f);
   const defense=G.mode==='def'||(G.mode==='assess'&&Math.random()<.35);
   if(defense){
     const s=G.bh(),n=G.cam?cam.sm[0]:null;
@@ -179,7 +179,9 @@ function spawn(now,el){
     G.th.push(o);G.busy=true;G.kind='d';return;
   }
   const r=Math.max(34,Math.min(W*.11,58)),[y0,y1]=yRange(r),nose=G.cam?cam.sm[0]:null,sw=G.cam?swPx():0,made=[];
+  let at=now;
   for(let j=0;j<d.w;j++){
+    if(j)at+=600+Math.random()*300;
     const [hand,kind]=G.bt().split(':'),tp=kind==='jab'?'jab':kind==='up'?'up':'cross';
     let px,py,ok=false;
     for(let i=0;i<20&&!ok;i++){
@@ -189,7 +191,7 @@ function spawn(now,el){
         &&(!nose||Math.hypot(nose.x-px,nose.y-py)>sw*.4+r*1.3)
         &&(!G.cam||['R','L'].every(h=>!cam.hp[h]||Math.hypot(cam.hp[h].x-px,cam.hp[h].y-py)>r*2.2));
     }
-    if(ok)made.push({x:px,y:py,r,hand,tp,d:kind,born:now,ttl});
+    if(ok)made.push({x:px,y:py,r,hand,tp,d:kind,born:at,ttl});
   }
   if(!made.length){G.next=now+300;return}
   G.tg.push(...made);G.busy=true;G.kind='p';
@@ -217,7 +219,7 @@ const ptr={};
 cv.addEventListener('pointerdown',e=>{
   if(!G)return;e.preventDefault();
   try{cv.setPointerCapture(e.pointerId)}catch(_){}
-  ptr[e.pointerId]={x:e.clientX,y:e.clientY,tg:G.tg.find(t=>Math.hypot(t.x-e.clientX,t.y-e.clientY)<t.r*1.4)||null};
+  ptr[e.pointerId]={x:e.clientX,y:e.clientY,tg:G.tg.find(t=>performance.now()>=t.born&&Math.hypot(t.x-e.clientX,t.y-e.clientY)<t.r*1.4)||null};
 });
 cv.addEventListener('pointerup',e=>{
   const p=ptr[e.pointerId];delete ptr[e.pointerId];if(!G||!p||G.cam)return;
@@ -322,6 +324,7 @@ function draw(now,el){
   }
 
   for(const t of G.tg){
+    if(now<t.born)continue;
     const f=Math.max(0,1-(now-t.born)/t.ttl),c=COL[t.hand];
     x.fillStyle=c+'33';x.strokeStyle=c;x.lineWidth=5;
     x.beginPath();x.arc(t.x,t.y,t.r,0,7);x.fill();x.stroke();
