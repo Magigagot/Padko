@@ -59,7 +59,7 @@ addEventListener('resize',rs);rs();
 
 const COL={R:'#ff3b4a',L:'#2f8cff'};
 const NAME={jab:'ДЖЕБ',cross:'КРОСС / ХУК',up:'АППЕРКОТ'};
-const DIF=[{n:'Новичок',ttl:1.6,gap:1.4,max:2,thr:.35},{n:'Средний',ttl:1,gap:1,max:3,thr:.45},{n:'Профессионал',ttl:.6,gap:.65,max:4,thr:.55}];
+const DIF=[{n:'Новичок',ttl:1.6,gap:1.4,w:2,thr:.35},{n:'Средний',ttl:1,gap:1,w:3,thr:.45},{n:'Профессионал',ttl:.6,gap:.8,w:3,thr:.55}];
 let G=null,runId=0,D=1,lm=null,cam=null;
 
 function show(id){document.querySelectorAll('.scr').forEach(e=>e.classList.add('hide'));if(id)$(id).classList.remove('hide')}
@@ -114,6 +114,11 @@ function chestPt(sw){const a=cam.sm[11],b=cam.sm[12],n=cam.sm[0];return a&&b?{x:
 
 function camDetect(now){
   poseUpdate(now);
+  if(!G.ready){
+    const s=cam.sm;
+    if(s[0]&&s[11]&&s[12]&&s[15]&&s[16]){if(!G.seen)G.seen=now;if(now-G.seen>400){G.ready=true;G.t0=now;G.next=now+2600}}else G.seen=0;
+    return;
+  }
   if(now-G.t0<2200)return;
   for(const t of G.tg.slice()){
     const p=cam.hp[t.hand];if(!p)continue;
@@ -151,7 +156,7 @@ async function start(m){
   }catch(e){err.textContent='Камера или модель недоступна ('+e.message+') — управление касаниями.';closeCam()}
   bts.forEach(b=>b.disabled=false);
   const now=performance.now();
-  G={mode:m,cam:useCam,t0:now,end:30000,tg:[],th:[],fx:[],next:now+(useCam?2600:700),hit:0,miss:0,wrong:0,rt:[],hR:0,hL:0,lives:5,combo:0,best:0,score:0,fl:{u:0,c:''},dif:D,
+  G={mode:m,cam:useCam,t0:now,end:30000,tg:[],th:[],fx:[],busy:false,kind:'p',ready:!useCam,seen:0,next:useCam?Infinity:now+700,hit:0,miss:0,wrong:0,rt:[],hR:0,hL:0,lives:5,combo:0,best:0,score:0,fl:{u:0,c:''},dif:D,
     bt:makeBag(['R','L'].flatMap(h=>['jab','up','l','r'].map(k=>h+':'+k))),bh:makeBag(useCam?['L','R','D','F','C']:['L','R','D'])};
   show(null);$('stop').classList.toggle('hide',m==='assess');
   const id=++runId;requestAnimationFrame(t=>tick(t,id));
@@ -160,32 +165,41 @@ function finish(){if(!G)return;const g=G;G=null;runId++;$('stop').classList.add(
 $('stop').onclick=finish;
 
 function spawn(now,el){
-  const k=G.mode==='assess'?.5+el/60000:Math.min(el/90000,1),d=DIF[G.dif],f=G.cam?1.3:1;
-  const gap=(1100-700*Math.min(k,1))*d.gap*f,ttl=Math.max(700,(2200-1200*Math.min(k,1))*d.ttl*f);
-  G.next=now+gap*(.8+Math.random()*.4);
-  const defense=G.mode==='def'||(G.mode==='assess'&&Math.random()<.25);
+  const k=kk(el),d=DIF[G.dif],f=G.cam?1.15:1;
+  const ttl=Math.max(900,(3000-1200*k)*d.ttl*f);
+  const defense=G.mode==='def'||(G.mode==='assess'&&Math.random()<.35);
   if(defense){
-    if(G.th.length)return;
     const s=G.bh(),n=G.cam?cam.sm[0]:null;
-    if(G.cam&&!n)return;
-    const o={s,born:now,ttl:ttl*.85+300};
+    if(G.cam&&!n){G.next=now+300;return}
+    const o={s,born:now,ttl:Math.max(1000,(1900-700*k)*d.ttl*f)};
     if(G.cam){
       const sw=swPx();o.sw=sw;o.n0={x:n.x,y:n.y};
       if(s==='F'){o.px=n.x;o.py=n.y}else if(s==='C'){const c=chestPt(sw);o.px=c.x;o.py=c.y}
     }
-    G.th.push(o);return;
+    G.th.push(o);G.busy=true;G.kind='d';return;
   }
-  if(G.tg.length>=d.max)return;
-  const [hand,kind]=G.bt().split(':'),tp=kind==='jab'?'jab':kind==='up'?'up':'cross';
-  const r=Math.max(34,Math.min(W*.11,58));
-  let px,py,ok=false;
-  for(let i=0;i<12&&!ok;i++){
-    px=r+8+Math.random()*(W-2*r-16);
-    py=H*.2+Math.random()*H*.55;
-    ok=G.tg.every(t=>Math.hypot(t.x-px,t.y-py)>r*2.3);
+  const r=Math.max(34,Math.min(W*.11,58)),[y0,y1]=yRange(r),nose=G.cam?cam.sm[0]:null,sw=G.cam?swPx():0,made=[];
+  for(let j=0;j<d.w;j++){
+    const [hand,kind]=G.bt().split(':'),tp=kind==='jab'?'jab':kind==='up'?'up':'cross';
+    let px,py,ok=false;
+    for(let i=0;i<20&&!ok;i++){
+      px=hand==='R'?W*.46+Math.random()*(W*.54-r-8):r+8+Math.random()*(W*.54-r-8);
+      py=y0+Math.random()*(y1-y0);
+      ok=made.every(t=>Math.hypot(t.x-px,t.y-py)>r*2.4)
+        &&(!nose||Math.hypot(nose.x-px,nose.y-py)>sw*.4+r*1.3)
+        &&(!G.cam||['R','L'].every(h=>!cam.hp[h]||Math.hypot(cam.hp[h].x-px,cam.hp[h].y-py)>r*2.2));
+    }
+    if(ok)made.push({x:px,y:py,r,hand,tp,d:kind,born:now,ttl});
   }
-  if(!ok)return;
-  G.tg.push({x:px,y:py,r,hand,tp,d:kind,born:now,ttl});
+  if(!made.length){G.next=now+300;return}
+  G.tg.push(...made);G.busy=true;G.kind='p';
+}
+function kk(el){return G.mode==='assess'?Math.min(1,.5+el/60000):Math.min(el/90000,1)}
+function yRange(r){
+  let a=H*.16,b=H*.5;
+  if(G.cam&&cam){const l=cam.sm[11],q=cam.sm[12];if(l&&q){const sw=swPx(),my=(l.y+q.y)/2;a=Math.max(SAT+80,my-sw*.9);b=Math.min(H*.6,my+sw)}}
+  if(b-a<r*2)b=a+r*2;
+  return[a,b];
 }
 
 function fx(px,py,txt,c,now){G.fx.push({x:px,y:py,txt,c,t:now})}
@@ -233,10 +247,14 @@ function act(p,a,now){
 
 function tick(now,id){
   if(id!==runId||!G)return;
-  const el=now-G.t0;
+  const el=G.ready?now-G.t0:0;
   if(G.mode==='assess'&&el>=G.end)return finish();
   if(G.cam&&cam)camDetect(now);
-  if(now>=G.next)spawn(now,el);
+  if(G.busy&&!G.tg.length&&!G.th.length){
+    G.busy=false;
+    G.next=now+(G.kind==='d'?700+Math.random()*350:1000+Math.random()*500)*DIF[G.dif].gap*(1-.3*kk(el));
+  }
+  if(!G.busy&&now>=G.next)spawn(now,el);
   for(const t of G.tg.slice())if(now-t.born>t.ttl){G.tg.splice(G.tg.indexOf(t),1);fail(t.x,t.y,'ПРОМАХ',now)}
   const h=G.th[0];
   if(h&&now-h.born>h.ttl){G.th.shift();fail(W/2,H/2,'ПОПАДАНИЕ!',now)}
@@ -266,11 +284,14 @@ function draw(now,el){
     drawBody();
   }
   x.textAlign='center';x.textBaseline='middle';
-  if(G.cam&&el<2200){
+  if(G.cam&&(!G.ready||el<2200)){
     x.fillStyle='#fff';x.font='bold 22px system-ui,sans-serif';
-    x.fillText('Встань так, чтобы были видны голова и руки',W/2,H*.45);
-    x.font='bold 56px system-ui,sans-serif';
-    x.fillText(Math.max(1,Math.ceil((2200-el)/700)),W/2,H*.55);
+    if(!G.ready){x.fillText('Встань так, чтобы были видны',W/2,H*.42);x.fillText('голова, плечи и обе руки',W/2,H*.47)}
+    else{
+      x.fillText('Приготовься',W/2,H*.45);
+      x.font='bold 56px system-ui,sans-serif';
+      x.fillText(Math.max(1,Math.ceil((2200-el)/700)),W/2,H*.55);
+    }
   }
   if(!G.cam&&el<3000){
     x.fillStyle='#ffb020';x.font='bold 14px system-ui,sans-serif';
